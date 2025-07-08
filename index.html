@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Transcritor de Áudio</title>
-    <!-- Estilos (mesmos de antes) -->
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
         .container { background-color: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 500px; width: 90%; }
@@ -14,119 +13,57 @@
         button { background-color: #0866ff; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background-color 0.2s; }
         button:disabled { background-color: #a0bdf5; cursor: not-allowed; }
         #result { margin-top: 25px; padding: 20px; border-radius: 6px; background-color: #f7f7f7; text-align: left; white-space: pre-wrap; word-wrap: break-word; color: #333; min-height: 50px; }
-        .loader { display: none; margin-top: 20px; color: #606770; }
+        .loader { display: none; margin-top: 20px; color: #606770;}
     </style>
-    <!-- Adicionando a biblioteca FFmpeg para navegador -->
-    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
 </head>
 <body>
-
     <div class="container">
         <h1>Transcritor de Áudio com Whisper</h1>
         <p>Envie um arquivo de áudio (MP3, WAV, M4A, OGG) para obter a transcrição.</p>
-        
         <form id="uploadForm">
             <input type="file" id="audioFile" name="audioFile" accept="audio/*" required>
             <button type="submit" id="submitButton">Transcrever</button>
         </form>
-
-        <div id="loader" class="loader"></div>
-        
+        <div id="loader" class="loader">Processando, por favor aguarde...</div>
         <h3>Resultado da Transcrição:</h3>
         <div id="result">A sua transcrição aparecerá aqui.</div>
     </div>
-
     <script>
-        const { FFmpeg } = FFmpegWASM;
-        let ffmpeg;
-        let ffmpegLoaded = false;
-
         const form = document.getElementById('uploadForm');
         const submitButton = document.getElementById('submitButton');
         const loader = document.getElementById('loader');
         const resultDiv = document.getElementById('result');
         
-        // !!! SUBSTITUA PELA SUA URL DE PRODUÇÃO DO WEBHOOK N8N !!!
-        const webhookUrl = 'https://n8n-n8n.znxk1t.easypanel.host/webhook/a7afa173-d939-46f8-80d7-0e2a9845c928';
-
-        const loadFFmpeg = async () => {
-            if (ffmpegLoaded) return; // Se já carregou, não faz nada
-            if (ffmpeg) return; // Se já está carregando, não faz nada
-            
-            ffmpeg = new FFmpeg();
-            ffmpeg.on('log', ({ message }) => {
-                // console.log(message); // Descomente para ver logs do ffmpeg
-            });
-            
-            loader.textContent = 'Carregando motor de conversão (pela 1ª vez)...';
-            loader.style.display = 'block';
-            submitButton.disabled = true; // Desabilita o botão enquanto carrega
-
-            await ffmpeg.load({
-               coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js'
-            });
-            
-            ffmpegLoaded = true;
-            loader.textContent = '';
-            loader.style.display = 'none';
-            submitButton.disabled = false; // Reabilita o botão
-        };
+        // !!! COLOQUE SUA URL DE PRODUÇÃO DO WEBHOOK N8N AQUI !!!
+        const webhookUrl = 'SUA_URL_DO_WEBHOOK_AQUI';
 
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
-
-            // Garante que o FFmpeg está carregado antes de continuar
-            if (!ffmpegLoaded) {
-                resultDiv.textContent = 'O motor de conversão ainda não carregou. Por favor, aguarde um momento e tente novamente.';
-                return;
-            }
-
-            const audioInput = document.getElementById('audioFile');
-            if (audioInput.files.length === 0) return;
-            const originalFile = audioInput.files[0];
-
+            const formData = new FormData(form);
             submitButton.disabled = true;
-            resultDiv.textContent = '';
-            
+            loader.style.display = 'block';
+            resultDiv.textContent = 'Enviando arquivo...';
+
             try {
-                loader.textContent = 'Convertendo áudio para MP3...';
-                loader.style.display = 'block';
-                
-                await ffmpeg.writeFile('input.file', new Uint8Array(await originalFile.arrayBuffer()));
-                await ffmpeg.exec(['-i', 'input.file', 'output.mp3']);
-                const data = await ffmpeg.readFile('output.mp3');
-                const mp3File = new File([data.buffer], "audio.mp3", { type: 'audio/mpeg' });
-
-                loader.textContent = 'Enviando para transcrição...';
-                const formData = new FormData();
-                formData.append('audioFile', mp3File);
-
                 const response = await fetch(webhookUrl, {
                     method: 'POST',
                     body: formData
                 });
-
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Erro na rede: ${response.status} ${response.statusText}. Detalhes: ${errorText}`);
+                     const errorText = await response.text();
+                     throw new Error(`Erro na rede: ${response.status} ${response.statusText}. Detalhes: ${errorText}`);
                 }
-
-                loader.textContent = 'Aguardando resultado...';
+                loader.textContent = 'Processando...';
                 const result = await response.json();
                 resultDiv.textContent = result.transcricao || 'Não foi possível extrair a transcrição da resposta.';
-
             } catch (error) {
-                console.error('Erro detalhado:', error);
+                console.error(error);
                 resultDiv.textContent = `Ocorreu um erro: ${error.message}`;
             } finally {
                 submitButton.disabled = false;
                 loader.style.display = 'none';
             }
         });
-
-        // Inicia o carregamento do FFmpeg assim que a página abre
-        loadFFmpeg();
     </script>
-
 </body>
 </html>
