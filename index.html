@@ -37,62 +37,69 @@
     </div>
 
     <script>
-        const { FFmpeg } = FFmpegWASM; // Carrega FFmpeg do script
+        const { FFmpeg } = FFmpegWASM;
         let ffmpeg;
+        let ffmpegLoaded = false;
 
         const form = document.getElementById('uploadForm');
         const submitButton = document.getElementById('submitButton');
         const loader = document.getElementById('loader');
         const resultDiv = document.getElementById('result');
         
-        // !!! SUBSTITUA PELA URL DE PRODUÇÃO DO SEU WEBHOOK N8N !!!
+        // !!! SUBSTITUA PELA SUA URL DE PRODUÇÃO DO WEBHOOK N8N !!!
         const webhookUrl = 'https://n8n-n8n.znxk1t.easypanel.host/webhook/a7afa173-d939-46f8-80d7-0e2a9845c928';
 
         const loadFFmpeg = async () => {
-            if (!ffmpeg) {
-                ffmpeg = new FFmpeg();
-                ffmpeg.on('log', ({ message }) => {
-                    // console.log(message); // Descomente para ver logs do ffmpeg
-                });
-                loader.textContent = 'Carregando motor de conversão...';
-                loader.style.display = 'block';
-                await ffmpeg.load({
-                   coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js'
-                });
-                loader.textContent = '';
-                loader.style.display = 'none';
-            }
+            if (ffmpegLoaded) return; // Se já carregou, não faz nada
+            if (ffmpeg) return; // Se já está carregando, não faz nada
+            
+            ffmpeg = new FFmpeg();
+            ffmpeg.on('log', ({ message }) => {
+                // console.log(message); // Descomente para ver logs do ffmpeg
+            });
+            
+            loader.textContent = 'Carregando motor de conversão (pela 1ª vez)...';
+            loader.style.display = 'block';
+            submitButton.disabled = true; // Desabilita o botão enquanto carrega
+
+            await ffmpeg.load({
+               coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js'
+            });
+            
+            ffmpegLoaded = true;
+            loader.textContent = '';
+            loader.style.display = 'none';
+            submitButton.disabled = false; // Reabilita o botão
         };
 
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
 
+            // Garante que o FFmpeg está carregado antes de continuar
+            if (!ffmpegLoaded) {
+                resultDiv.textContent = 'O motor de conversão ainda não carregou. Por favor, aguarde um momento e tente novamente.';
+                return;
+            }
+
             const audioInput = document.getElementById('audioFile');
             if (audioInput.files.length === 0) return;
             const originalFile = audioInput.files[0];
 
-            // Desabilita o botão e mostra o loader
             submitButton.disabled = true;
             resultDiv.textContent = '';
             
             try {
-                // 1. Carrega o motor do FFmpeg (se ainda não carregado)
-                await loadFFmpeg();
-                
-                // 2. Converte o arquivo para MP3
                 loader.textContent = 'Convertendo áudio para MP3...';
                 loader.style.display = 'block';
                 
                 await ffmpeg.writeFile('input.file', new Uint8Array(await originalFile.arrayBuffer()));
                 await ffmpeg.exec(['-i', 'input.file', 'output.mp3']);
                 const data = await ffmpeg.readFile('output.mp3');
-
                 const mp3File = new File([data.buffer], "audio.mp3", { type: 'audio/mpeg' });
 
-                // 3. Envia o arquivo MP3 convertido para o n8n
                 loader.textContent = 'Enviando para transcrição...';
                 const formData = new FormData();
-                formData.append('audioFile', mp3File); // Nome do campo é 'audioFile'
+                formData.append('audioFile', mp3File);
 
                 const response = await fetch(webhookUrl, {
                     method: 'POST',
@@ -100,24 +107,24 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`Erro na rede: ${response.statusText}`);
+                    const errorText = await response.text();
+                    throw new Error(`Erro na rede: ${response.status} ${response.statusText}. Detalhes: ${errorText}`);
                 }
 
                 loader.textContent = 'Aguardando resultado...';
                 const result = await response.json();
-                resultDiv.textContent = result.transcricao || 'Não foi possível extrair a transcrição.';
+                resultDiv.textContent = result.transcricao || 'Não foi possível extrair a transcrição da resposta.';
 
             } catch (error) {
-                console.error('Erro:', error);
+                console.error('Erro detalhado:', error);
                 resultDiv.textContent = `Ocorreu um erro: ${error.message}`;
             } finally {
-                // Reabilita o botão e esconde o loader
                 submitButton.disabled = false;
                 loader.style.display = 'none';
             }
         });
 
-        // Carrega o FFmpeg assim que a página é aberta para agilizar
+        // Inicia o carregamento do FFmpeg assim que a página abre
         loadFFmpeg();
     </script>
 
